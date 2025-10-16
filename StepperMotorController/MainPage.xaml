@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="StepperMotorController.MainPage"
+             Title="Stepper Motor Controller">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="12">
+
+            <!-- Connection row -->
+            <HorizontalStackLayout Spacing="8">
+                <Picker x:Name="PortPicker" Title="COM Port" WidthRequest="220"/>
+                <Entry x:Name="BaudEntry" WidthRequest="120" Text="115200" Keyboard="Numeric"/>
+                <Button x:Name="ConnectBtn" Text="Connect" Clicked="ConnectBtn_Clicked" />
+                <Button Text="Refresh Ports" Clicked="RefreshPorts_Clicked" />
+                <Button Text="Listen Test (10s)" Clicked="ListenTest_Clicked" />
+            </HorizontalStackLayout>
+
+            <!-- Quick commands -->
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="Enable (M17)" Clicked="Enable_Clicked"/>
+                <Button Text="Disable (M18)" Clicked="Disable_Clicked"/>
+            </HorizontalStackLayout>
+
+            <!-- Jog X -->
+            <HorizontalStackLayout Spacing="8">
+                <Label Text="X:" VerticalOptions="Center"/>
+                <Button Text="-10" Clicked="JogXNeg_Clicked"/>
+                <Button Text="+10" Clicked="JogXPos_Clicked"/>
+                <Entry x:Name="FeedEntry" WidthRequest="100" Text="3000" Keyboard="Numeric"/>
+                <Label Text="mm/min" VerticalOptions="Center"/>
+            </HorizontalStackLayout>
+
+            <!-- Loop controls -->
+            <Frame Padding="12" BorderColor="{DynamicResource GridLineColor}" BackgroundColor="{DynamicResource SecondaryColor}" HasShadow="False">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Loop: X +2 mm, then X -2 mm (repeats)" FontAttributes="Bold"/>
+
+                    <HorizontalStackLayout Spacing="10">
+                        <Button x:Name="StartLoopBtn" Text="Start Loop" Clicked="StartLoop_Clicked"/>
+                        <Button x:Name="StopLoopBtn"  Text="Stop Loop"  Clicked="StopLoop_Clicked" IsEnabled="False"/>
+                    </HorizontalStackLayout>
+
+                    <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                        <Label Text="Speed:" VerticalOptions="Center"/>
+                        <Button Text="−"  Clicked="SpeedDown_Clicked"/>
+                        <Label x:Name="SpeedLabel" Text="3000 mm/min" VerticalOptions="Center" />
+                        <Button Text="+"  Clicked="SpeedUp_Clicked"/>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Raw command -->
+            <HorizontalStackLayout Spacing="8">
+                <Entry x:Name="CmdEntry" Placeholder="Type G/M-code (e.g., G1 X100 F3000)" HorizontalOptions="FillAndExpand"/>
+                <Button Text="Send" Clicked="Send_Clicked"/>
+            </HorizontalStackLayout>
+
+            <!-- Console -->
+            <CollectionView x:Name="LogView" HeightRequest="300">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Label Text="{Binding}" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

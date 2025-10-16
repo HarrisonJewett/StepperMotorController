@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<!-- MAUI on .NET 9 -->
+		<UseMaui>true</UseMaui>
+		<SingleProject>true</SingleProject>
+
+		<!-- Windows only while we develop -->
+		<TargetFrameworks>net9.0-windows10.0.19041.0</TargetFrameworks>
+		<SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+
+		<OutputType>WinExe</OutputType>
+		<RootNamespace>StepperMotorController</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<!-- IMPORTANT: let Windows App SDK bring its build tasks -->
+		<EnableMsixTooling>true</EnableMsixTooling>
+		<!-- Optional: silence the MA002 warning by explicitly referencing MAUI controls below -->
+		<SkipValidateMauiImplicitPackageReferences>true</SkipValidateMauiImplicitPackageReferences>
+		<Platforms>AnyCPU;x64</Platforms>
+	</PropertyGroup>
+	<PropertyGroup Condition="'$(TargetFramework)'=='net9.0-windows10.0.19041.0'">
+		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+	</PropertyGroup>
+
+	<!-- Pin MAUI Controls to match your workload band (adjust if your workload updated) -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Maui.Controls" Version="9.0.111" />
+	</ItemGroup>
+
+	<!-- SerialPort for Windows -->
+	<ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0-windows'))">
+		<PackageReference Include="System.IO.Ports" Version="9.*" />
+	</ItemGroup>
+</Project>
