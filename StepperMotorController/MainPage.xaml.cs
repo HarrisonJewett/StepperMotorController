@@ -73,8 +73,8 @@ public partial class MainPage : ContentPage
                 Log($"> Connected {port}");
                 ConnectBtn.Text = "Disconnect";
 
-                //_readerCts = new CancellationTokenSource();
-                //_ = Task.Run(() => ReaderLoop(_readerCts.Token));
+                _readerCts = new CancellationTokenSource();
+                _ = Task.Run(() => ReaderLoop(_readerCts.Token));
             }
             catch (Exception ex)
             {
@@ -152,6 +152,7 @@ public partial class MainPage : ContentPage
 
         return null;
     }
+    // Replace your ListenTest_Clicked with this more aggressive diagnostic version
     private async void ListenTest_Clicked(object? sender, EventArgs e)
     {
         if (_transport == null || !_transport.IsConnected)
@@ -160,67 +161,181 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        // Make sure we can actually hear the controller
-        StartReaderIfNeeded();
-
-        // Disable button during test (optional – only if you named it in XAML)
         if (sender is Button b) b.IsEnabled = false;
-
-        // A small set of safe probe commands for RepRapFirmware
-        // (M115 = firmware info, M122 = diagnostics, M114 = position, G91 = relative, G4 = dwell)
-        var probes = new[]
-        {
-        "M115",
-        "M122",
-        "M114",
-        "G91",
-        "G4 P200"
-    };
-
-        Log("> Listen test: starting 10s probe window …");
-
-        using var testCts = new CancellationTokenSource();
-        var endAt = DateTime.UtcNow.AddSeconds(10);
-
-        int sent = 0, heard = 0, missed = 0;
 
         try
         {
-            int i = 0;
-            while (DateTime.UtcNow < endAt)
+            Log("> === DIAGNOSTIC TEST START ===");
+
+            // Test 1: Wait for startup banner (boards usually send something on connect)
+            Log("> Test 1: Listening for 3 seconds for any startup messages...");
+            var startTime = DateTime.UtcNow;
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+            while (!cts.Token.IsCancellationRequested)
             {
-                var cmd = probes[i++ % probes.Length];
-
-                // Send one command
-                await SendAsync(cmd, testCts.Token);
-                sent++;
-
-                // Wait up to 1500 ms for ANY line back
-                var line = await WaitForNextLineAsync(1500, testCts.Token);
-                if (!string.IsNullOrWhiteSpace(line))
+                try
                 {
-                    heard++;
-                    Log($"< {line}");
+                    var line = await _transport.ReadLineAsync(cts.Token);
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        Log($"< STARTUP: {line}");
+                    }
                 }
-                else
-                {
-                    missed++;
-                    Log($"! No response within 1500 ms after {cmd}");
-                }
-
-                // Gentle spacing between probes so we never burst
-                await Task.Delay(150, testCts.Token);
+                catch (TimeoutException) { /* expected */ }
+                catch (OperationCanceledException) { break; }
             }
+
+            Log($"> Waited {(DateTime.UtcNow - startTime).TotalSeconds:F1}s for startup");
+
+            // Test 2: Try different line endings
+            Log("> Test 2: Sending M115 with different line endings...");
+
+            // LF only (what you're using now)
+            await SendRawBytes(new byte[] { 0x4D, 0x31, 0x31, 0x35, 0x0A }, "M115 with LF");
+            await Task.Delay(500);
+            await CheckForResponse(1000);
+
+            // CRLF
+            await SendRawBytes(new byte[] { 0x4D, 0x31, 0x31, 0x35, 0x0D, 0x0A }, "M115 with CRLF");
+            await Task.Delay(500);
+            await CheckForResponse(1000);
+
+            // CR only (unlikely but worth trying)
+            await SendRawBytes(new byte[] { 0x4D, 0x31, 0x31, 0x35, 0x0D }, "M115 with CR");
+            await Task.Delay(500);
+            await CheckForResponse(1000);
+
+            // Test 3: Try a simple echo command
+            Log("> Test 3: Sending empty line (should get 'ok' or error)...");
+            await SendRawBytes(new byte[] { 0x0A }, "Empty LF");
+            await Task.Delay(500);
+            await CheckForResponse(1000);
+
+            // Test 4: Raw buffer inspection
+            Log("> Test 4: Reading raw bytes for 2 seconds...");
+            await InspectRawBytes(2000);
+
+            Log("> === DIAGNOSTIC TEST COMPLETE ===");
         }
-        catch (OperationCanceledException) { /* ignore */ }
         catch (Exception ex)
         {
-            Log($"! Listen test error: {ex.Message}");
+            Log($"! Diagnostic error: {ex.Message}");
         }
         finally
         {
-            Log($"> Listen test complete. Sent: {sent}, Heard: {heard}, Missed: {missed}");
             if (sender is Button b2) b2.IsEnabled = true;
+        }
+    }
+
+    private async Task SendRawBytes(byte[] bytes, string description)
+    {
+        if (_transport == null || !_transport.IsConnected) return;
+
+        var hex = BitConverter.ToString(bytes).Replace("-", " ");
+        Log($"> Sending {description}: [{hex}]");
+
+        var port = (_transport as SerialTransport);
+        if (port != null)
+        {
+            // Use reflection to access the private _port field
+            var portField = port.GetType().GetField("_port",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var serialPort = portField?.GetValue(port) as System.IO.Ports.SerialPort;
+
+            if (serialPort != null && serialPort.IsOpen)
+            {
+                await serialPort.BaseStream.WriteAsync(bytes, 0, bytes.Length);
+                await serialPort.BaseStream.FlushAsync();
+            }
+        }
+    }
+
+    private async Task CheckForResponse(int timeoutMs)
+    {
+        if (_transport == null || !_transport.IsConnected) return;
+
+        var cts = new CancellationTokenSource(timeoutMs);
+        var responses = 0;
+
+        try
+        {
+            while (!cts.Token.IsCancellationRequested)
+            {
+                var line = await _transport.ReadLineAsync(cts.Token);
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    Log($"< RESPONSE: {line}");
+                    responses++;
+                }
+            }
+        }
+        catch (TimeoutException) { /* expected */ }
+        catch (OperationCanceledException) { /* expected */ }
+
+        if (responses == 0)
+        {
+            Log("  ! No response received");
+        }
+        else
+        {
+            Log($"  ✓ Received {responses} response(s)");
+        }
+    }
+
+    private async Task InspectRawBytes(int durationMs)
+    {
+        if (_transport == null || !_transport.IsConnected) return;
+
+        var port = (_transport as SerialTransport);
+        if (port == null) return;
+
+        var portField = port.GetType().GetField("_port",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var serialPort = portField?.GetValue(port) as System.IO.Ports.SerialPort;
+
+        if (serialPort == null || !serialPort.IsOpen) return;
+
+        var buffer = new byte[256];
+        var endTime = DateTime.UtcNow.AddMilliseconds(durationMs);
+        var totalBytes = 0;
+
+        while (DateTime.UtcNow < endTime)
+        {
+            try
+            {
+                if (serialPort.BytesToRead > 0)
+                {
+                    var count = await serialPort.BaseStream.ReadAsync(buffer, 0,
+                        Math.Min(buffer.Length, serialPort.BytesToRead));
+
+                    if (count > 0)
+                    {
+                        totalBytes += count;
+                        var hex = BitConverter.ToString(buffer, 0, count).Replace("-", " ");
+                        var ascii = System.Text.Encoding.ASCII.GetString(buffer, 0, count)
+                            .Replace("\r", "\\r")
+                            .Replace("\n", "\\n");
+                        Log($"< RAW [{count} bytes]: {hex}");
+                        Log($"  ASCII: {ascii}");
+                    }
+                }
+                await Task.Delay(50);
+            }
+            catch (Exception ex)
+            {
+                Log($"! Raw read error: {ex.Message}");
+                break;
+            }
+        }
+
+        if (totalBytes == 0)
+        {
+            Log("  ! No bytes received at all - board might not be responding");
+        }
+        else
+        {
+            Log($"  Total: {totalBytes} bytes received");
         }
     }
 
